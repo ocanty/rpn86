@@ -21,9 +21,10 @@
 ; THE SOFTWARE.
 
 ; Build with: 
-; asm -f elf64 rpn86.asm -o rpn86.o
+; yasm -f elf64 rpn86.asm -o rpn86.o
 ; gcc -m64 rpn86.o -o rpn86 -fno-pie -fno-plt -no-pie;
 ; ./rpn86
+
     BITS 64
     global main
     extern printf
@@ -36,12 +37,12 @@ die:
     ; Kill the program with return value -1
     mov rdi, -1
     call exit
-    ret ; Not like this is needed
+    ret                             ; Not like this is needed
 
 print:
     ; Use printf (with ABI stack setup)
-    xor rax, rax ; not using floats / xmm registers
-    sub rsp, 8   ; Stack on C API calls needs to be 16bit aligned
+    xor rax, rax                    ; not using floats / xmm registers
+    sub rsp, 8                      ; Stack on C API calls needs to be 16bit aligned
     call printf
     add rsp, 8
     ret
@@ -50,12 +51,12 @@ print:
 
 ; RPN Stack Implementation - Begin
 
-rpn_stack_n:    equ  1024
-rpn_stack_sz:   equ  rpn_stack_n*1024
+rpn_stack_max_elements:    equ  1024
+rpn_stack_sz:              equ  rpn_stack_max_elements*8  ; Total stack size in bytes
 
     section .bss
 rpn_stack:      resb rpn_stack_sz
-rpn_stack_ptr:  resq 0
+rpn_stack_n:    resq 0             ; Stack ptr
                     
     section .data
 str_rpn_stack_overflow:
@@ -71,56 +72,52 @@ rpn_stack_push:
     ; [in] rdi  - value
     ; [mangles] rdi, rax    
     ; Get stack ptr, if it's at its max size -> error
-    mov rax, [rpn_stack_ptr]
-    cmp rax, rpn_stack_sz
-    je rpn_stack_push.fail
-    jmp rpn_stack_push.good
+
+    mov rax, [rpn_stack_n]          ; Get num of stack elements 
+    cmp rax, rpn_stack_sz           ; Compare to stack size
+    jge rpn_stack_push.fail         ; stack overflow if equal or greater
+    jmp rpn_stack_push.good         ; normally its good
 
     .fail:
-        mov rdi, str_rpn_stack_overflow
-        mov rsi, rax
-        call print
-        ret
-    
+    mov rdi, str_rpn_stack_overflow
+    mov rsi, rax
+    call print
+    ret
+
     .good:
-        ; store value at stack ptr
-        mov [rpn_stack+rax], rdi 
-
-        ; increment stack ptr
-        inc rax 
-
-        ; store and return
-        mov [rpn_stack_ptr], rax
-        ret
+    mov [rpn_stack+rax], rdi        ; store value at stack ptr
+    add rax, 8                      ; increment stack ptr
+    mov [rpn_stack_n], rax          ; store and return
+    ret
 
  rpn_stack_pop:
     ; Removes a value on the RPN stack
     ; [out] rax - value
-    ; [mangles] rdi, rax    
+    ; [mangles] rdi, rax, rbx    
     ; Get stack ptr, if it's at its lowest size -> error
-    mov rax, [rpn_stack_ptr]
+    mov rax, [rpn_stack_n]
     cmp rax, 0
-    je rpn_stack_push.fail
-    jmp rpn_stack_push.good
+    jle rpn_stack_pop.fail
+    jmp rpn_stack_pop.good
 
     .fail:
-        mov rdi, str_rpn_stack_underflow
-        mov rsi, rax
-        call print
-        ret
+    mov rdi, str_rpn_stack_underflow
+    mov rsi, rax
+    call print
+    ret
     
     .good:
-        mov rax, [rpn_stack_ptr]
-
-        ; increment stack ptr
-        dec rax 
-
-        ; store value at stack ptr
-        mov [rpn_stack+rax], rdi 
-        ret
+    mov rbx, [rpn_stack+rax]        ; read val on stack
+    sub rax, 8                      ; decrement stack ptr
+    mov [rpn_stack_n], rax          ; store stack ptr
+    xchg rax, rbx                   ; set return = rax
+    ret
 
 ; RPN Stack Implementation - End
 
 ; Entrypoint - Begin
 main:
+    mov rdi, 4
+    call rpn_stack_push
+    call rpn_stack_pop
     ret

@@ -28,7 +28,8 @@
     BITS 64
     global main
     extern printf
-    extern scanf
+    extern read
+    extern strtol
     extern exit
 
 ; Util - Begin
@@ -36,11 +37,14 @@
 str_fmt_str:
     db "%s", 0
 
+str_fmt_char:
+    db "%c", 10, 0
+
 str_fmt_uint:
-    db "%u", 0
+    db "%u", 10, 0
 
 str_fmt_int:
-    db "%i", 0
+    db "%i", 10, 0
 
     section .text
 die:
@@ -66,25 +70,30 @@ print_die:
 
 ; RPN Stack Implementation - Begin
 
+    section .data
 rpn_stack_max_elements: equ  1024
 
-rpn_stack_sz:           equ  rpn_stack_max_elements*8  ; Total stack size in bytes
+rpn_stack_sz:           equ  8192 ; Total stack size in bytes
 
     section .bss
-
 rpn_stack:      
     resb rpn_stack_sz
 
 rpn_stack_n:    
-    resq 0             ; Stack ptr
+    dq 0             ; Stack ptr
                     
     section .data
 str_rpn_stack_overflow:
-    db "RPN stack overflow: sp - %u", 10, 0
+    db "RPN stack overflow: sp - %i", 10, 0
 
 str_rpn_stack_underflow:
-    db "RPN stack overflow: sp - %u", 10, 0
+    db "RPN stack underflow: sp - %i", 10, 0
 
+pushed:
+    db "pushed %i", 10, 0
+
+popped:
+    db "popped %i", 10, 0
 
     section .text
 rpn_stack_push:
@@ -92,23 +101,36 @@ rpn_stack_push:
     ; [in] rdi  - value
     ; [mangles] rdi, rax    
     ; Get stack ptr, if it's at its max size -> error
+    ; mov rdi, pushed
+    ; call print
 
-    mov rax, [rpn_stack_n]          ; Get num of stack elements 
+    mov rax, rdi 
+    push rdi
+    lea rdi, [pushed]
+    mov rsi, rax
+    call print
+    pop rdi
+
+    mov rax, [rpn_stack_n]          ; Get stack ptr
     cmp rax, rpn_stack_sz           ; Compare to stack size
     jge rpn_stack_push.fail         ; stack overflow if equal or greater
     jmp rpn_stack_push.good         ; normally its good
 
     .fail:
         mov rdi, str_rpn_stack_overflow
-        mov rsi, rax
+        mov rsi, rpn_stack_sz
         call print
+        jmp die
         ret
 
     .good:
-        mov [rpn_stack+rax], rdi    ; store value at stack ptr
+        lea rbx, [rpn_stack+rax]
+        mov [rbx], rdi              ; store value at stack ptr
         add rax, 8                  ; increment stack ptr
         mov [rpn_stack_n], rax      ; store and return
         ret
+
+    ret
 
  rpn_stack_pop:
     ; Removes a value on the RPN stack
@@ -124,41 +146,153 @@ rpn_stack_push:
         mov rdi, str_rpn_stack_underflow
         mov rsi, rax
         call print
+        jmp die
         ret
     
     .good:  
-        mov rbx, [rpn_stack+rax]    ; read val on stack
         sub rax, 8                  ; decrement stack ptr
         mov [rpn_stack_n], rax      ; store stack ptr
-        xchg rax, rbx               ; set return = rax
+
+        lea rbx, [rpn_stack+rax]    ; read val on stack
+        mov rax, [rbx]  
+
+        push rax 
+        lea rdi, [popped]
+        mov rsi, rax
+        call print
+        pop rax
+        
         ret
 
+    ret
+
+    section .data
+str_test:
+    db "testn.", 10, 0
+str_invalid_expr:
+    db "Invalid expression.", 10, 0
+str_evaluating:
+    db "Evaluating: %s", 10, 0
+str_got_result: 
+    db "Result is %i!", 10, 0
+str_got_space:
+    db "Got space", 10, 0
+
+    section .text
 rpn_evaluate:
     ; Evaluate an RPN expression
     ; Will exit program on error
-    ; [in] rdi - string
+    ; [in] rdi - string addr
     ; [out] rax - value
     .str_ptr: equ 0                 ; offset for string pointer
-    enter 8, 0                      ; stack space for string pointer
-    
-    mov qword[rsp+.str_ptr], rdi    ; load string pointer into offset ptr
+    enter 16, 0                     ; stack space for string pointer
+
+    mov [rsp + .str_ptr], rdi       ; load string pointer into offset ptr
+
     jmp .process_token
 
     .process_token:
-        lea rax, [rsp + .str_ptr]   ; calculate address of str ptr
-        mov al, [rax]               ; read the character at it
-
-        ; our plan is to find a token, then advance the string pointer
-        ; but first we gotta check if we've hit anything unusual
-
-        cmp al, 0x00
+        mov rbx, [rsp + .str_ptr] 
+        xor rax, rax
+        mov al, byte [rbx]
+        
+        cmp al, 0
         je .calculate_result
 
-        cmp al,
+        cmp al, ' '
+        je .got_space
+
+        cmp al, 10      ; newline can be used as a delimiter, too
+        je .got_space   ; just use space handler
+
+        cmp al, '+'                 ; check for operands
+        je .got_plus
+        cmp al, '-'          
+        je .got_minus 
+        cmp al, '*'          
+        je .got_multiply
+        cmp al, '/'            
+        je .got_divide
+
+        jmp .check_number           ; not operands, check for numbers
+
+        .got_plus:
+            ; operand 2
+            call rpn_stack_pop
+            push rax
+
+            ; operand 1
+            call rpn_stack_pop
+            pop rbx
+            
+            add rax, rbx
+            mov rdi, rax
+            call rpn_stack_push
+
+            jmp .calculate_result
+
+        .got_minus:
+            ; operand 2
+            call rpn_stack_pop
+            push rax
+
+            ; operand 1
+            call rpn_stack_pop
+            pop rbx
+            
+            sub rax, rbx
+            mov rdi, rax
+            call rpn_stack_push
+
+            jmp .calculate_result
+
+        .got_multiply:
+            jmp die
+
+
+        .got_divide:
+            jmp die
+
+        .check_number:              ; check if digit is greater/equal to 0
+            cmp al, '0'
+            jge .maybe_number
+            jmp .got_invalid
+
+        .maybe_number:              ; check if digit less than/equal to 9
+            cmp al, '9'
+            jle .got_number
+            jmp .got_invalid
+
+        .got_number:                 ; extract number and push to RPN stack
+        ; long int strtol (const char* str, char** endptr, int base);
+            mov rdi, [rsp + .str_ptr]
+            lea rsi, [rsp + .str_ptr]   
+            mov rdx, 10
+            add rsp, 16                  ; 16-bit stack alignment
+            call strtol 
+            sub rsp, 16
+
+            mov rdi, rax
+            call rpn_stack_push
+
+            jmp .process_token
         
+        .got_invalid:
+            mov rdi, str_invalid_expr
+            call print
+            jmp die
+
+        .got_space:
+            mov rdi, [rsp + .str_ptr]
+            inc rdi 
+            mov [rsp + .str_ptr], rdi 
+            jmp .process_token
 
     .calculate_result:
-
+        call rpn_stack_pop
+        lea rdi, [str_got_result]
+        mov rsi, rax
+        call print
 
     leave
     ret
@@ -177,38 +311,24 @@ str_ask_for_expr:
 str_expr:
     resb 1024
 
-str_expr_overflow_cookie:
-    resq 0
-
     section .text
 main:
-    enter 1024, 0                    ; stack space for expression string
+    enter 0, 0
 
     mov rdi, str_ask_for_expr
     call print
 
-    ; We need to generate a secret/cookie that 
-    ; is placed after the expr string
-    ; to make sure scanf doesn't overflow our buffer
-    rdrand rax
-    mov [str_expr_overflow_cookie], rax
-
-    mov rdi, str_fmt_str
     lea rsi, [str_expr]             ; put the string they supply into a stack var
+    mov rdx, 1024
+    mov rdi, 0
     xor rax, rax                    ; not using floats
-    add rsp, 16                     ; 16-bit alignment for C ABI
-    call scanf
-    sub rsp, 16
-
-    pop rax                         ; cookie now in rax
-    mov rbx, [str_expr_overflow_cookie]
-    cmp rax, rbx
-    jne die                         ; die if they aren't the same -> an overflow occured
+    ; add rsp, 16                    ; 16-bit alignment for C ABI
+    call read
+     ;sub rsp, 16
 
     lea rdi, [str_expr]
     call rpn_evaluate
-    
+
     leave
     ret
 ; Entrypoint - End
-

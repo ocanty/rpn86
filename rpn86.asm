@@ -33,19 +33,6 @@
     extern exit
 
 ; Util - Begin
-    section .data
-str_fmt_str:
-    db "%s", 10, 0
-
-str_fmt_char:
-    db "%c", 10, 0
-
-str_fmt_uint:
-    db "%u", 10, 0
-
-str_fmt_int:
-    db "%i", 10, 0
-
     section .text
 die:
     ; Kill the program with return value -1
@@ -84,11 +71,11 @@ str_rpn_stack_overflow:
 str_rpn_stack_underflow:
     db "RPN stack underflow: sp - %i", 10, 0
 
-pushed:
-    db "pushed %i", 10, 0
+; pushed:
+;     db "pushed %i", 10, 0
 
-popped:
-    db "popped %i", 10, 0
+; popped:
+;     db "popped %i", 10, 0
 
     section .text
 rpn_stack_push:
@@ -156,16 +143,13 @@ rpn_stack_push:
         ret
 
     section .data
-str_test:
-    db "testn.", 10, 0
+
 str_invalid_expr:
     db "Invalid expression.", 10, 0
 str_evaluating:
     db "Evaluating: %s", 10, 0
 str_got_result: 
     db "Result is %i!", 10, 0
-str_got_space:
-    db "Got space", 10, 0
 
     section .text
 rpn_evaluate:
@@ -195,10 +179,10 @@ rpn_evaluate:
         je .calculate_result
 
         cmp al, ' '
-        je .got_space
+        je .increment_str_ptr_and_process_token
 
-        cmp al, 10      ; newline can be used as a delimiter, too
-        je .got_space   ; just use space handler
+        cmp al, 10      
+        je .increment_str_ptr_and_process_token
 
         cmp al, '+'                 ; check for operands
         je .got_plus
@@ -301,12 +285,6 @@ rpn_evaluate:
             call print
             jmp die
 
-        .got_space:
-            mov rdi, [rsp + .str_ptr]
-            inc rdi 
-            mov [rsp + .str_ptr], rdi 
-            jmp .process_token
-
     .calculate_result:
         call rpn_stack_pop
         lea rdi, [str_got_result]
@@ -339,7 +317,7 @@ main:
     mov rdx, 1024
     mov rdi, 0
     xor rax, rax                    ; not using floats
-    ; add rsp, 16                    ; 16-bit alignment for C ABI
+    ; add rsp, 16                   ; 16-bit alignment for C ABI
     call read
      ;sub rsp, 16
 

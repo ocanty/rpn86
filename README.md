@@ -1,14 +1,15 @@
 
 # rpn86
 
-A reverse polish notation/postfix evaluator
-Currently only supports positive numbers                          
+A reverse polish notation/postfix evaluator in x86-64 assembly
+
+Currently only supports positive numbers.                     
 
 ## Building
 
 ```
-    yasm -f elf64 rpn86.asm -o rpn86.o
-    gcc -m64 rpn86.o -o rpn86 -fno-pie -fno-plt
+yasm -f elf64 rpn86.asm -o rpn86.o
+gcc -m64 rpn86.o -o rpn86 -fno-pie -fno-plt
 ```
 
 ## Running

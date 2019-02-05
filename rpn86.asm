@@ -35,7 +35,7 @@
 ; Util - Begin
     section .data
 str_fmt_str:
-    db "%s", 0
+    db "%s", 10, 0
 
 str_fmt_char:
     db "%c", 10, 0
@@ -59,11 +59,6 @@ print:
     sub rsp, 8                      ; Stack on C API calls needs to be 16bit aligned
     call printf
     add rsp, 8
-    ret
-
-print_die:
-    call print
-    call die
     ret
 
 ; Util - End
@@ -104,12 +99,11 @@ rpn_stack_push:
     ; mov rdi, pushed
     ; call print
 
-    mov rax, rdi 
-    push rdi
-    lea rdi, [pushed]
-    mov rsi, rax
-    call print
-    pop rdi
+    ; push rdi
+    ; lea rdi, [pushed]
+    ; mov rsi, rax
+    ; call print
+    ; pop rdi
 
     mov rax, [rpn_stack_n]          ; Get stack ptr
     cmp rax, rpn_stack_sz           ; Compare to stack size
@@ -129,8 +123,6 @@ rpn_stack_push:
         add rax, 8                  ; increment stack ptr
         mov [rpn_stack_n], rax      ; store and return
         ret
-
-    ret
 
  rpn_stack_pop:
     ; Removes a value on the RPN stack
@@ -156,15 +148,12 @@ rpn_stack_push:
         lea rbx, [rpn_stack+rax]    ; read val on stack
         mov rax, [rbx]  
 
-        push rax 
-        lea rdi, [popped]
-        mov rsi, rax
-        call print
-        pop rax
-        
+        ; push rax 
+        ; lea rdi, [popped]
+        ; mov rsi, rax
+        ; call print
+        ; pop rax
         ret
-
-    ret
 
     section .data
 str_test:
@@ -190,6 +179,12 @@ rpn_evaluate:
     mov [rsp + .str_ptr], rdi       ; load string pointer into offset ptr
 
     jmp .process_token
+
+    .increment_str_ptr_and_process_token:
+        mov rbx, [rsp + .str_ptr]
+        inc rbx 
+        mov [rsp + .str_ptr], rbx
+        jmp .process_token
 
     .process_token:
         mov rbx, [rsp + .str_ptr] 
@@ -229,7 +224,7 @@ rpn_evaluate:
             mov rdi, rax
             call rpn_stack_push
 
-            jmp .calculate_result
+            jmp .increment_str_ptr_and_process_token
 
         .got_minus:
             ; operand 2
@@ -244,33 +239,57 @@ rpn_evaluate:
             mov rdi, rax
             call rpn_stack_push
 
-            jmp .calculate_result
+            jmp .increment_str_ptr_and_process_token
 
         .got_multiply:
-            jmp die
+            ; operand 2
+            call rpn_stack_pop
+            push rax
+
+            ; operand 1
+            call rpn_stack_pop
+            pop rbx
+            xor rdx, rdx            ; clear dividend
+            mul rbx
+            mov rdi, rax
+            call rpn_stack_push
+
+            jmp .increment_str_ptr_and_process_token
 
 
         .got_divide:
-            jmp die
+            ; operand 2
+            call rpn_stack_pop
+            push rax
+
+            ; operand 1
+            call rpn_stack_pop
+            pop rbx
+            xor rdx, rdx            ; clear dividend
+            div rbx
+            mov rdi, rax
+            call rpn_stack_push
+
+            jmp .increment_str_ptr_and_process_token
 
         .check_number:              ; check if digit is greater/equal to 0
             cmp al, '0'
             jge .maybe_number
             jmp .got_invalid
-
+; 
         .maybe_number:              ; check if digit less than/equal to 9
             cmp al, '9'
             jle .got_number
             jmp .got_invalid
 
         .got_number:                 ; extract number and push to RPN stack
-        ; long int strtol (const char* str, char** endptr, int base);
+            ; long int strtol (const char* str, char** endptr, int base);
             mov rdi, [rsp + .str_ptr]
             lea rsi, [rsp + .str_ptr]   
             mov rdx, 10
-            add rsp, 16                  ; 16-bit stack alignment
+            ; add rsp, 16            ; 16-bit stack alignment, not needed here
             call strtol 
-            sub rsp, 16
+            ; sub rsp, 16
 
             mov rdi, rax
             call rpn_stack_push
@@ -296,8 +315,6 @@ rpn_evaluate:
 
     leave
     ret
-
-
 
 ; RPN Stack Implementation - End
 
